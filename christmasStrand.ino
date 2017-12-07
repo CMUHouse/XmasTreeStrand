@@ -20,8 +20,11 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(300, PIN, NEO_GRB + NEO_KHZ800);
 // and minimize distance between Arduino and first pixel.  Avoid connecting
 // on a live circuit...if you must, connect GND first.
 
-char intensity[512];
-String inputString = "";
+uint32_t recv_data_size = 0;
+uint8_t recv_arr[512];
+
+uint8_t intensity[160];
+
 boolean footerReceived = false;
 uint8_t idle_counter = 0;
 
@@ -42,10 +45,12 @@ void setup() {
   // initialize the second counter
   second_counter = millis();
 
+  memset(recv_arr, 0, sizeof(recv_arr));
+  recv_data_size = 0;
   set_on();
 
   //Reserve space for the inputString and buffer
-  inputString.reserve(512);
+  
   
   Serial.begin(115200);
 
@@ -54,7 +59,8 @@ void setup() {
 }
 
 void set_on() {
-  for ( uint16_t i = 0; i < 512; i++ ) {
+  memset(intensity, 0, sizeof(intensity));
+  for ( uint16_t i = 0; i < 150; i++ ) {
     intensity[i] =  32;
   }
   
@@ -82,12 +88,20 @@ void serialDelay(uint8_t wait) {
     // Check for new serial data
     serialEvent();
     if (footerReceived) {
-      inputString.toCharArray(intensity, 512);
-      inputString = "";
-      setSimpleLights(intensity[150]);
+
+      if (recv_data_size >= 152) {
+        memcpy(intensity, recv_arr+recv_data_size-152, recv_data_size);
+        Serial.write(intensity[150]);
+        Serial.write(0xdb);
+        setSimpleLights(intensity[150]);
+      } else {
+        Serial.write(0xd0);
+        Serial.write(0xee);
+      }
+      
+      memset(recv_arr, 0, sizeof(recv_arr));
+      recv_data_size = 0;
       footerReceived = false;
-      Serial.write(intensity[150]);
-      Serial.write(0xdb);
     }
   }
   //Serial.write('A');
@@ -98,12 +112,16 @@ void serialEvent() {
     // reset the idle timer
     idle_counter = 0;
     // get the new byte:
-    char inChar = (char)Serial.read();
+    uint8_t inChar = Serial.read();
+    if (recv_data_size < 512) {
+      recv_arr[recv_data_size] = inChar;
+      recv_data_size += 1;
+    }
+    
     //DEBUG: write it back
     //Serial.write(inChar);
     // add it to the inputString:
-    inputString += inChar;
-    char blah = 0xDB;
+    static const uint8_t blah = 0xDB;
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it:
     if (inChar == blah) {
